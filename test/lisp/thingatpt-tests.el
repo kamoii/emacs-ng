@@ -70,7 +70,7 @@
     ;; UUID, only hex is allowed
     ("01234567-89ab-cdef-ABCD-EF0123456789" 1 uuid "01234567-89ab-cdef-ABCD-EF0123456789")
     ("01234567-89ab-cdef-ABCD-EF012345678G" 1 uuid nil))
-  "List of thing-at-point tests.
+  "List of `thing-at-point' tests.
 Each list element should have the form
 
   (STRING POS THING RESULT)
@@ -170,21 +170,13 @@ position to retrieve THING.")
     (forward-char -1)
     (should (eq (symbol-at-point) 'bar))))
 
-(ert-deftest test-symbol-thing-2 ()
-  (with-temp-buffer
-    (insert " bar ")
-    (goto-char (point-max))
-    (should (eq (symbol-at-point) nil))
-    (forward-char -1)
-    (should (eq (symbol-at-point) 'bar))))
-
 (ert-deftest test-symbol-thing-3 ()
   (with-temp-buffer
     (insert "bar")
     (goto-char 2)
     (should (eq (symbol-at-point) 'bar))))
 
-(ert-deftest test-symbol-thing-3 ()
+(ert-deftest test-symbol-thing-4 ()
   (with-temp-buffer
     (insert "`[[`(")
     (goto-char 2)
@@ -223,4 +215,12 @@ position to retrieve THING.")
   (should (equal (test--number "0xf00" 2) 3840))
   (should (equal (test--number "0xf00" 3) 3840)))
 
-;;; thingatpt.el ends here
+(ert-deftest test-fields ()
+  (with-temp-buffer
+    (insert (propertize "foo" 'field 1) "bar" (propertize "zot" 'field 2))
+    (goto-char 1)
+    (should (eq (symbol-at-point) 'foo))
+    (goto-char 5)
+    (should (eq (symbol-at-point) 'bar))))
+
+;;; thingatpt-tests.el ends here

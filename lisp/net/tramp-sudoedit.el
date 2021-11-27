@@ -63,7 +63,8 @@ See `tramp-actions-before-shell' for more info.")
 
 ;;;###tramp-autoload
 (defconst tramp-sudoedit-file-name-handler-alist
-  '((access-file . tramp-handle-access-file)
+  '((abbreviate-file-name . tramp-handle-abbreviate-file-name)
+    (access-file . tramp-handle-access-file)
     (add-name-to-file . tramp-sudoedit-handle-add-name-to-file)
     (byte-compiler-base-file-name . ignore)
     (copy-directory . tramp-handle-copy-directory)
@@ -148,11 +149,10 @@ See `tramp-actions-before-shell' for more info.")
 ;; It must be a `defsubst' in order to push the whole code into
 ;; tramp-loaddefs.el.  Otherwise, there would be recursive autoloading.
 ;;;###tramp-autoload
-(defsubst tramp-sudoedit-file-name-p (filename)
-  "Check if it's a FILENAME for SUDOEDIT."
-  (and (tramp-tramp-file-p filename)
-       (string= (tramp-file-name-method (tramp-dissect-file-name filename))
-		tramp-sudoedit-method)))
+(defsubst tramp-sudoedit-file-name-p (vec-or-filename)
+  "Check if it's a VEC-OR-FILENAME for SUDOEDIT."
+  (when-let* ((vec (tramp-ensure-dissected-file-name vec-or-filename)))
+    (string= (tramp-file-name-method vec) tramp-sudoedit-method)))
 
 ;;;###tramp-autoload
 (defun tramp-sudoedit-file-name-handler (operation &rest args)
@@ -190,7 +190,7 @@ arguments to pass to the OPERATION."
 		  (and (numberp ok-if-already-exists)
 		       (not (yes-or-no-p
 			     (format
-			      "File %s already exists; make it a link anyway? "
+			      "File %s already exists; make it a link anyway?"
 			      v2-localname)))))
 	      (tramp-error v2 'file-already-exists newname)
 	    (delete-file newname)))
@@ -233,7 +233,7 @@ absolute file names."
 
     (let ((t1 (tramp-sudoedit-file-name-p filename))
 	  (t2 (tramp-sudoedit-file-name-p newname))
-	  (file-times (tramp-compat-file-attribute-modification-time
+	  (file-times (file-attribute-modification-time
 		       (file-attributes filename)))
 	  (file-modes (tramp-default-file-modes filename))
 	  (attributes (and preserve-extended-attributes
@@ -247,7 +247,7 @@ absolute file names."
 
       (with-parsed-tramp-file-name (if t1 filename newname) nil
 	(unless (file-exists-p filename)
-	  (tramp-compat-file-missing v filename))
+	  (tramp-error v 'file-missing filename))
 	(when (and (not ok-if-already-exists) (file-exists-p newname))
 	  (tramp-error v 'file-already-exists newname))
 	(when (and (file-directory-p newname)
@@ -464,8 +464,9 @@ the result will be a local, non-Tramp, file name."
   "Like `file-readable-p' for Tramp files."
   (with-parsed-tramp-file-name filename nil
     (with-tramp-file-property v localname "file-readable-p"
-      (tramp-sudoedit-send-command
-       v "test" "-r" (tramp-compat-file-name-unquote localname)))))
+      (or (tramp-handle-file-readable-p filename)
+	  (tramp-sudoedit-send-command
+	   v "test" "-r" (tramp-compat-file-name-unquote localname))))))
 
 (defun tramp-sudoedit-handle-set-file-modes (filename mode &optional flag)
   "Like `set-file-modes' for Tramp files."
@@ -597,6 +598,7 @@ the result will be a local, non-Tramp, file name."
      v (if parents "/" (file-name-directory localname)))
     (unless (tramp-sudoedit-send-command
 	     v (if parents '("mkdir" "-p") "mkdir")
+	     "-m" (format "%#o" (default-file-modes))
 	     (tramp-compat-file-name-unquote localname))
       (tramp-error v 'file-error "Couldn't make directory %s" dir))))
 
@@ -631,7 +633,7 @@ component is used as the target of the symlink."
 		       (not
 			(yes-or-no-p
 			 (format
-			  "File %s already exists; make it a link anyway? "
+			  "File %s already exists; make it a link anyway?"
 			  localname)))))
 	      (tramp-error v 'file-already-exists localname)
 	    (delete-file linkname)))
@@ -719,11 +721,9 @@ ID-FORMAT valid values are `string' and `integer'."
   "Like `write-region' for Tramp files."
   (setq filename (expand-file-name filename))
   (with-parsed-tramp-file-name filename nil
-    (let* ((uid (or (tramp-compat-file-attribute-user-id
-		     (file-attributes filename 'integer))
+    (let* ((uid (or (file-attribute-user-id (file-attributes filename 'integer))
 		    (tramp-get-remote-uid v 'integer)))
-	   (gid (or (tramp-compat-file-attribute-group-id
-		     (file-attributes filename 'integer))
+	   (gid (or (file-attribute-group-id (file-attributes filename 'integer))
 		    (tramp-get-remote-gid v 'integer)))
 	   (flag (and (eq mustbenew 'excl) 'nofollow))
 	   (modes (tramp-default-file-modes filename flag))
@@ -734,10 +734,10 @@ ID-FORMAT valid values are `string' and `integer'."
 
 	;; Set the ownership, modes and extended attributes.  This is
 	;; not performed in `tramp-handle-write-region'.
-	(unless (and (= (tramp-compat-file-attribute-user-id
+	(unless (and (= (file-attribute-user-id
 			 (file-attributes filename 'integer))
 			uid)
-                     (= (tramp-compat-file-attribute-group-id
+                     (= (file-attribute-group-id
 			 (file-attributes filename 'integer))
 			gid))
           (tramp-set-file-uid-gid filename uid gid))

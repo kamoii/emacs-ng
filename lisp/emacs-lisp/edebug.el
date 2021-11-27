@@ -3519,7 +3519,8 @@ The removes the effect of `edebug-on-entry'.  If FUNCTION is
 nil, remove `edebug-on-entry' on all functions."
   (interactive
    (list (let ((name (completing-read
-                      "Cancel edebug on entry to (default all functions): "
+                      (format-prompt "Cancel edebug on entry to"
+                                     "all functions")
                       (let ((functions (edebug--edebug-on-entry-functions)))
                         (unless functions
                           (user-error "No functions have `edebug-on-entry'"))
@@ -3571,7 +3572,7 @@ This is useful for exiting even if `unwind-protect' code may be executed."
 (defun edebug-set-initial-mode ()
   "Set the initial execution mode of Edebug.
 The mode is requested via the key that would be used to set the mode in
-edebug-mode."
+`edebug-mode'."
   (interactive)
   (let* ((old-mode edebug-initial-mode)
 	 (key (read-key-sequence
@@ -4468,7 +4469,7 @@ With prefix argument, make it a temporary breakpoint."
 	       'read-expression-history)))))))
   (edebug-modify-breakpoint t condition arg))
 
-(easy-menu-define edebug-menu edebug-mode-map "Edebug menus" edebug-mode-menus)
+(easy-menu-define edebug-menu edebug-mode-map "Edebug menus." edebug-mode-menus)
 
 
 ;;; Finalize Loading
@@ -4548,7 +4549,8 @@ instrumentation for, defaulting to all functions."
         (user-error "Found no functions to remove instrumentation from"))
       (let ((name
              (completing-read
-              "Remove instrumentation from (default all functions): "
+              (format-prompt "Remove instrumentation from"
+                             "all functions")
               functions)))
         (if (and name
                  (not (equal name "")))

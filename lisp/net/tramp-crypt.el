@@ -157,7 +157,8 @@ If NAME doesn't belong to a crypted remote directory, retun nil."
 ;; New handlers should be added here.
 ;;;###tramp-autoload
 (defconst tramp-crypt-file-name-handler-alist
-  '((access-file . tramp-crypt-handle-access-file)
+  '(;; `abbreviate-file-name' performed by default handler.
+    (access-file . tramp-crypt-handle-access-file)
     (add-name-to-file . tramp-handle-add-name-to-file)
     ;; `byte-compiler-base-file-name' performed by default handler.
     (copy-directory . tramp-handle-copy-directory)
@@ -247,7 +248,7 @@ Operations not mentioned here will be handled by the default Emacs primitives.")
     (unless (tramp-crypt-file-name-p tfnfo)
       (setq tfnfo (apply
 		   #'tramp-file-name-for-operation operation
-		   (cons (tramp-compat-temporary-file-directory) (cdr args)))))
+		   (cons tramp-compat-temporary-file-directory (cdr args)))))
     tfnfo))
 
 (defun tramp-crypt-run-real-handler (operation args)
@@ -294,8 +295,8 @@ arguments to pass to the OPERATION."
 (defun tramp-crypt-config-file-name (vec)
   "Return the encfs config file name for VEC."
   (expand-file-name
-   (concat "tramp-" (tramp-file-name-host vec) tramp-crypt-encfs-config)
-   user-emacs-directory))
+   (locate-user-emacs-file
+    (concat "tramp-" (tramp-file-name-host vec) tramp-crypt-encfs-config))))
 
 (defun tramp-crypt-maybe-open-connection (vec)
   "Maybe open a connection VEC.
@@ -329,7 +330,7 @@ connection if a previous connection has died for some reason."
 	  (copy-file remote-config local-config 'ok 'keep)
 
 	;; Create local encfs6 config file otherwise.
-	(let* ((default-directory (tramp-compat-temporary-file-directory))
+	(let* ((default-directory tramp-compat-temporary-file-directory)
 	       (tmpdir1 (file-name-as-directory
 			 (tramp-compat-make-temp-file " .crypt" 'dir-flag)))
 	       (tmpdir2 (file-name-as-directory
@@ -383,7 +384,7 @@ ARGS are the arguments.  It returns t if ran successful, and nil otherwise."
   (with-temp-buffer
     (let* (;; Don't check for a proper method.
 	   (non-essential t)
-	   (default-directory (tramp-compat-temporary-file-directory))
+	   (default-directory tramp-compat-temporary-file-directory)
 	   ;; We cannot add it to `process-environment', because
 	   ;; `tramp-call-process-region' doesn't use it.
 	   (encfs-config
@@ -427,7 +428,7 @@ Otherwise, return NAME."
 	      crypt-vec localname (concat (symbol-name op) "-file-name")
 	    (unless (tramp-crypt-send-command
 		     crypt-vec (if (eq op 'encrypt) "encode" "decode")
-		     (tramp-compat-temporary-file-directory) localname)
+		     tramp-compat-temporary-file-directory localname)
 	      (tramp-error
 	       crypt-vec 'file-error "%s of file name %s failed."
 	       (if (eq op 'encrypt) "Encoding" "Decoding") name))
@@ -485,6 +486,7 @@ See `tramp-crypt-do-encrypt-or-decrypt-file'."
 Files in that directory and all subdirectories will be encrypted
 before copying to, and decrypted after copying from that
 directory.  File names will be also encrypted."
+  ;; (declare (completion tramp-crypt-command-completion-p))
   (interactive "DRemote directory name: ")
   (unless tramp-crypt-enabled
     (tramp-user-error nil "Feature is not enabled."))
@@ -517,7 +519,7 @@ kept in their encrypted form."
 	      tramp-crypt-encfs-config
 	      (directory-files name nil directory-files-no-dot-files-regexp))
 	     (yes-or-no-p
-	      "There exist encrypted files, do you want to continue? "))
+	      "There exist encrypted files, do you want to continue?"))
     (setq tramp-crypt-directories (delete name tramp-crypt-directories))
     (tramp-register-file-name-handlers)))
 
@@ -596,7 +598,7 @@ absolute file names."
 
       (with-parsed-tramp-file-name (if t1 filename newname) nil
 	(unless (file-exists-p filename)
-	  (tramp-compat-file-missing v filename))
+	  (tramp-error v 'file-missing filename))
 	(when (and (not ok-if-already-exists) (file-exists-p newname))
 	  (tramp-error v 'file-already-exists newname))
 	(when (and (file-directory-p newname)
@@ -698,7 +700,7 @@ absolute file names."
     (directory &optional full match nosort count)
   "Like `directory-files' for Tramp files."
   (unless (file-exists-p directory)
-    (tramp-compat-file-missing (tramp-dissect-file-name directory) directory))
+    (tramp-error (tramp-dissect-file-name directory) 'file-missing directory))
   (when (file-directory-p directory)
     (setq directory (file-name-as-directory (expand-file-name directory)))
     (let* (tramp-crypt-enabled

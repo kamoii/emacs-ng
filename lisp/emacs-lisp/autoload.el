@@ -25,7 +25,7 @@
 
 ;; This code helps GNU Emacs maintainers keep the loaddefs.el file up to
 ;; date.  It interprets magic cookies of the form ";;;###autoload" in
-;; lisp source files in various useful ways.  To learn more, read the
+;; Lisp source files in various useful ways.  To learn more, read the
 ;; source; if you're going to use this, you'd better be able to.
 
 ;;; Code:
@@ -393,6 +393,8 @@ FILE's name."
     (concat ";;; " basename
             " --- automatically extracted " (or type "autoloads")
             "  -*- lexical-binding: t -*-\n"
+            (when (equal basename "loaddefs.el")
+              ";; This file will be copied to ldefs-boot.el and checked in periodically.\n")
 	    ";;\n"
 	    ";;; Code:\n\n"
 	    (if lp
@@ -432,8 +434,10 @@ FILE's name."
   file)
 
 (defun autoload-insert-section-header (outbuf autoloads load-name file time)
-  "Insert the section-header line,
-which lists the file name and which functions are in it, etc."
+  "Insert into buffer OUTBUF the section-header line for FILE.
+The header line lists the file name, its \"load name\", its autoloads,
+and the time the FILE was last updated (the time is inserted only
+if `autoload-timestamps' is non-nil, otherwise a fixed fake time is inserted)."
   ;; (cl-assert ;Make sure we don't insert it in the middle of another section.
   ;;  (save-excursion
   ;;    (or (not (re-search-backward
@@ -460,7 +464,7 @@ which lists the file name and which functions are in it, etc."
 	    (insert "\n" generate-autoload-section-continuation))))))
 
 (defun autoload-find-file (file)
-  "Fetch file and put it in a temp buffer.  Return the buffer."
+  "Fetch FILE and put it in a temp buffer.  Return the buffer."
   ;; It is faster to avoid visiting the file.
   (setq file (expand-file-name file))
   (with-current-buffer (get-buffer-create " *autoload-file*")
@@ -480,10 +484,10 @@ which lists the file name and which functions are in it, etc."
   "File local variable to prevent scanning this file for autoload cookies.")
 
 (defun autoload-file-load-name (file outfile)
-  "Compute the name that will be used to load FILE."
-  ;; OUTFILE should be the name of the global loaddefs.el file, which
-  ;; is expected to be at the root directory of the files we're
-  ;; scanning for autoloads and will be in the `load-path'.
+  "Compute the name that will be used to load FILE.
+OUTFILE should be the name of the global loaddefs.el file, which
+is expected to be at the root directory of the files we are
+scanning for autoloads and will be in the `load-path'."
   (let* ((name (file-relative-name file (file-name-directory outfile)))
          (names '())
          (dir (file-name-directory outfile)))

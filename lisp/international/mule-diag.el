@@ -833,7 +833,7 @@ The IGNORED argument is ignored."
   "Display information about a font whose name is FONTNAME."
   (interactive
    (list (completing-read
-          "Font name (default current choice for ASCII chars): "
+          (format-prompt "Font name" "current choice for ASCII chars")
           (and window-system
                ;; Implied by `window-system'.
                (fboundp 'x-list-fonts)
@@ -882,7 +882,7 @@ The IGNORED argument is ignored."
   ;; the current line.
   (beginning-of-line)
   (let ((from (mule--kbd-at (point)))
-	(to (if (looking-at "[^.]*[.]* ")
+	(to (if (looking-at "[^.]+[.][.] ")
 		(mule--kbd-at (match-end 0)))))
     (if (re-search-forward "[ \t]*$" nil t)
 	(delete-region (match-beginning 0) (match-end 0)))
@@ -1004,7 +1004,7 @@ This shows which font is used for which character(s)."
 			  (mapcar 'cdr fontset-alias-alist)))
 	   (completion-ignore-case t))
        (list (completing-read
-	      "Fontset (default used by the current frame): "
+              (format-prompt "Fontset" "used by the current frame")
 	      fontset-list nil t)))))
   (if (= (length fontset) 0)
       (setq fontset (face-attribute 'default :fontset))

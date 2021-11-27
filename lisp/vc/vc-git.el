@@ -242,14 +242,19 @@ included in the completions."
 ;;;###autoload         (load "vc-git" nil t)
 ;;;###autoload         (vc-git-registered file))))
 
-(defun vc-git--literal-pathspec (pathspec)
-  "Prepend :(literal) path magic to PATHSPEC."
-  ;; Good example of PATHSPEC that needs this: "test[56].xx".
-  (and pathspec (concat ":(literal)" pathspec)))
+;; Good example of file name that needs this: "test[56].xx".
+(defun vc-git--literal-pathspec (file)
+  "Prepend :(literal) path magic to FILE."
+  (when file
+    ;; Expand abbreviated file names.
+    (when (file-name-absolute-p file)
+      (setq file (expand-file-name file)))
+    (concat ":(literal)" (file-local-name file))))
 
-(defun vc-git--literal-pathspecs (pathspecs)
-  "Prepend :(literal) path magic to PATHSPECS."
-  (mapcar #'vc-git--literal-pathspec pathspecs))
+(defun vc-git--literal-pathspecs (files)
+  "Prepend :(literal) path magic to FILES."
+  (unless (vc-git--file-list-is-rootdir files)
+    (mapcar #'vc-git--literal-pathspec files)))
 
 (defun vc-git-registered (file)
   "Check whether FILE is registered with git."
@@ -402,7 +407,7 @@ in the order given by `git status'."
   orig-name)          ;; Original name for renames or copies.
 
 (defun vc-git-escape-file-name (name)
-  "Escape a file name if necessary."
+  "Escape filename NAME if necessary."
   (if (string-match "[\n\t\"\\]" name)
       (concat "\""
               (mapconcat (lambda (c)
@@ -891,8 +896,7 @@ The car of the list is the current branch."
 (declare-function log-edit--toggle-amend "log-edit" (last-msg-fn))
 
 (defun vc-git-log-edit-toggle-signoff ()
-  "Toggle whether to add the \"Signed-off-by\" line at the end of
-the commit message."
+  "Toggle whether to add the \"Signed-off-by\" line at the end of commit message."
   (interactive)
   (log-edit-toggle-header "Sign-Off" "yes"))
 
@@ -1142,6 +1146,14 @@ This prompts for a branch to merge from."
 
 (autoload 'vc-setup-buffer "vc-dispatcher")
 
+;; It's a weird option due to how Git handles '--follow', and it can
+;; hide certain (usually merge) commits in the `vc-print-log' buffers.
+;;
+;; (setq vc-git-log-switches '("-m")) can fix that, but at the cost of
+;; duplicating many merge commits in the log.
+;;
+;; Long explanation here:
+;; https://stackoverflow.com/questions/46487476/git-log-follow-graph-skips-commits
 (defcustom vc-git-print-log-follow nil
   "If true, follow renames in Git logs for a single file."
   :type 'boolean
@@ -1244,7 +1256,10 @@ log entries."
 
 (defun vc-git-mergebase (rev1 &optional rev2)
   (unless rev2 (setq rev2 "HEAD"))
-  (string-trim-right (vc-git--run-command-string nil "merge-base" rev1 rev2)))
+  (let ((base (vc-git--run-command-string nil "merge-base" rev1 rev2)))
+    (if base
+        (string-trim-right base)
+      (error "No common ancestor for merge base"))))
 
 (defvar log-view-message-re)
 (defvar log-view-file-re)
@@ -1311,7 +1326,7 @@ or BRANCH^ (where \"^\" can be repeated)."
 
 (defun vc-git-expanded-log-entry (revision)
   (with-temp-buffer
-    (apply #'vc-git-command t nil nil (list "log" revision "-1" "--"))
+    (apply #'vc-git-command t nil nil (list "log" revision "-1"  "--no-color" "--"))
     (goto-char (point-min))
     (unless (eobp)
       ;; Indent the expanded log entry.
@@ -1552,10 +1567,10 @@ This requires git 1.8.4 or later, for the \"-L\" option of \"git log\"."
     (or (vc-git-symbolic-commit next-rev) next-rev)))
 
 (defun vc-git-delete-file (file)
-  (vc-git-command nil 0 (vc-git--literal-pathspecs file) "rm" "-f" "--"))
+  (vc-git-command nil 0 (vc-git--literal-pathspec file) "rm" "-f" "--"))
 
 (defun vc-git-rename-file (old new)
-  (vc-git-command nil 0 (vc-git--literal-pathspecs (list old new)) "mv" "-f" "--"))
+  (vc-git-command nil 0 (list old new) "mv" "-f" "--"))
 
 (defun vc-git-mark-resolved (files)
   (vc-git-command nil 0 (vc-git--literal-pathspecs files) "add"))
@@ -1607,8 +1622,8 @@ before it is executed.
 With two \\[universal-argument] prefixes, directly edit and run `grep-command'.
 
 Collect output in a buffer.  While git grep runs asynchronously, you
-can use \\[next-error] (M-x next-error), or \\<grep-mode-map>\\[compile-goto-error] \
-in the grep output buffer,
+can use \\[next-error] (`next-error'), or \\<grep-mode-map>\
+\\[compile-goto-error] in the grep output buffer,
 to go to the lines where grep found matches.
 
 This command shares argument histories with \\[rgrep] and \\[grep]."
@@ -1673,7 +1688,7 @@ This command shares argument histories with \\[rgrep] and \\[grep]."
   (let ((stash (completing-read
                  prompt
                  (split-string
-                  (or (vc-git--run-command-string nil "stash" "list") "") "\n")
+                  (or (vc-git--run-command-string nil "stash" "list") "") "\n" t)
                  nil :require-match nil 'vc-git-stash-read-history)))
     (if (string-equal stash "")
         (user-error "Not a stash")
@@ -1718,12 +1733,11 @@ This command shares argument histories with \\[rgrep] and \\[grep]."
 
 (defun vc-git-stash-list ()
   (when-let ((out (vc-git--run-command-string nil "stash" "list")))
-    (delete
-     ""
-     (split-string
-      (replace-regexp-in-string
-       "^stash@" "             " out)
-      "\n"))))
+    (split-string
+     (replace-regexp-in-string
+      "^stash@" "             " out)
+     "\n"
+     t)))
 
 (defun vc-git-stash-get-at-point (point)
   (save-excursion
@@ -1787,15 +1801,18 @@ The difference to vc-do-command is that this function always invokes
                 '("GIT_OPTIONAL_LOCKS=0")))
           process-environment)))
     (apply #'vc-do-command (or buffer "*vc*") okstatus vc-git-program
-	   ;; https://debbugs.gnu.org/16897
-	   (unless (and (not (cdr-safe file-or-list))
-			(let ((file (or (car-safe file-or-list)
-					file-or-list)))
-			  (and file
-			       (eq ?/ (aref file (1- (length file))))
-			       (equal file (vc-git-root file)))))
-	     file-or-list)
-	   (cons "--no-pager" flags))))
+           ;; https://debbugs.gnu.org/16897
+           (unless (vc-git--file-list-is-rootdir file-or-list)
+             file-or-list)
+           (cons "--no-pager" flags))))
+
+(defun vc-git--file-list-is-rootdir (file-or-list)
+  (and (not (cdr-safe file-or-list))
+       (let ((file (or (car-safe file-or-list)
+                       file-or-list)))
+         (and file
+              (eq ?/ (aref file (1- (length file))))
+              (equal file (vc-git-root file))))))
 
 (defun vc-git--empty-db-p ()
   "Check if the git db is empty (no commit done yet)."

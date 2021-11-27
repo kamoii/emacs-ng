@@ -498,13 +498,14 @@ absent, return nil."
           "" (buffer-substring-no-properties
               start (lm-commentary-end))))))))
 
-(defun lm-homepage (&optional file)
-  "Return the homepage in file FILE, or current buffer if FILE is nil."
+(defun lm-website (&optional file)
+  "Return the website in file FILE, or current buffer if FILE is nil."
   (let ((page (lm-with-file file
-		(lm-header "\\(?:x-\\)?\\(?:homepage\\|url\\)"))))
-    (if (and page (string-match "^<.+>$" page))
-	(substring page 1 -1)
+                (lm-header (rx (? "x-") (or "url" "homepage"))))))
+    (if (and page (string-match (rx bol "<" (+ nonl) ">" eol) page))
+        (substring page 1 -1)
       page)))
+(defalias 'lm-homepage 'lm-website) ; for backwards-compatibility
 
 ;;; Verification and synopses
 

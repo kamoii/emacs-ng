@@ -345,7 +345,17 @@ of master file."
 
              ;; Find external document specifications
              (goto-char 1)
-             (while (re-search-forward "[\n\r][ \t]*\\\\externaldocument\\(\\[\\([^]]*\\)\\]\\)?{\\([^}]+\\)}" nil t)
+             (while (re-search-forward
+                     (concat "[\n\r][ \t]*"
+                             ;; Support \externalcitedocument macro
+                             "\\\\external\\(?:cite\\)?document"
+                             ;; The optional prefix
+                             "\\(\\[\\([^]]*\\)\\]\\)?"
+                             ;; The 2nd opt. arg can only be nocite
+                             "\\(?:\\[nocite\\]\\)?"
+                             ;; Mandatory file argument
+                             "{\\([^}]+\\)}")
+                     nil t)
                (push (list 'xr-doc (reftex-match-string 2)
                            (reftex-match-string 3))
                      docstruct))
@@ -435,7 +445,8 @@ This function also makes sure the old toc markers do not point anywhere."
 ;;;###autoload
 (defun reftex-section-info (file)
   "Return a section entry for the current match.
-Careful: This function expects the match-data to be still in place!"
+Careful: This function expects the `match-data' to still be in
+place!"
   (let* ((marker (set-marker (make-marker) (1- (match-beginning 3))))
          (macro (reftex-match-string 3))
          (prefix (save-match-data
@@ -494,7 +505,8 @@ will rescan the entire document."
 ;;;###autoload
 (defun reftex-index-info (file)
   "Return an index entry for the current match.
-Careful: This function expects the match-data to be still in place!"
+Careful: This function expects the `match-data' to still be in
+place!"
   (catch 'exit
     (let* ((macro (reftex-match-string 10))
            (bom (match-beginning 10))

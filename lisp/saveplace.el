@@ -55,7 +55,7 @@ This alist is saved between Emacs sessions.")
   :type 'file)
 
 (defcustom save-place-version-control nil
-  "Controls whether to make numbered backups of master save-place file.
+  "Controls whether to make numbered backups of master `save-place' file.
 It can have four values: t, nil, `never', and `nospecial'.  The first
 three have the same meaning that they do for the variable
 `version-control', and the final value `nospecial' means just use the
@@ -88,7 +88,9 @@ this happens automatically before saving `save-place-alist' to
   :type 'boolean)
 
 (defcustom save-place-abbreviate-file-names nil
-  "If non-nil, abbreviate file names before saving them."
+  "If non-nil, abbreviate file names before saving them.
+This can simplify sharing the `save-place-file' file across
+different hosts."
   :type 'boolean
   :version "28.1")
 
@@ -326,11 +328,18 @@ may have changed) back to `save-place-alist'."
       (with-current-buffer (car buf-list)
 	;; save-place checks buffer-file-name too, but we can avoid
 	;; overhead of function call by checking here too.
-	(and (or buffer-file-name (and (derived-mode-p 'dired-mode)
-                                       (boundp 'dired-subdir-alist)
-				       dired-subdir-alist
-				       (dired-current-directory)))
-	     (save-place-to-alist))
+	(when (and (or buffer-file-name
+                       (and (derived-mode-p 'dired-mode)
+                            (boundp 'dired-subdir-alist)
+		            dired-subdir-alist
+		            (dired-current-directory)))
+                   ;; Don't save place in literally-visited file
+                   ;; because this will commonly differ from the place
+                   ;; when visiting literally (and
+                   ;; `find-file-literally' always places point at the
+                   ;; start of the buffer).
+                   (not find-file-literally))
+	  (save-place-to-alist))
 	(setq buf-list (cdr buf-list))))))
 
 (defun save-place-find-file-hook ()

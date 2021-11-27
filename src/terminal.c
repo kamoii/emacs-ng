@@ -447,6 +447,8 @@ possible return values.  */)
       return Qns;
     case output_wr:
       return Qx; /* pretend webrender as a X gui backend, so we can reuse the x-win.el logic */
+    case output_haiku:
+      return Qhaiku;
     default:
       emacs_abort ();
     }

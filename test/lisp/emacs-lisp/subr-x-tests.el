@@ -455,18 +455,18 @@
   "Test `thread-first' wraps single function names."
   (should (equal (macroexpand
                   '(thread-first 5
-                     -))
+                                 -))
                  '(- 5)))
   (should (equal (macroexpand
                   '(thread-first (+ 1 2)
-                     -))
+                                 -))
                  '(- (+ 1 2)))))
 
 (ert-deftest subr-x-test-thread-first-expansion ()
   "Test `thread-first' expands correctly."
   (should (equal
            (macroexpand '(thread-first
-                             5
+                           5
                            (+ 20)
                            (/ 25)
                            -
@@ -477,13 +477,13 @@
   "Test several `thread-first' examples."
   (should (equal (thread-first (+ 40 2)) 42))
   (should (equal (thread-first
-                     5
+                   5
                    (+ 20)
                    (/ 25)
                    -
                    (+ 40)) 39))
   (should (equal (thread-first
-                     "this-is-a-string"
+                   "this-is-a-string"
                    (split-string "-")
                    (nbutlast 2)
                    (append (list "good")))
@@ -500,18 +500,18 @@
   "Test `thread-last' wraps single function names."
   (should (equal (macroexpand
                   '(thread-last 5
-                     -))
+                                -))
                  '(- 5)))
   (should (equal (macroexpand
                   '(thread-last (+ 1 2)
-                     -))
+                                -))
                  '(- (+ 1 2)))))
 
 (ert-deftest subr-x-test-thread-last-expansion ()
   "Test `thread-last' expands correctly."
   (should (equal
            (macroexpand '(thread-last
-                             5
+                           5
                            (+ 20)
                            (/ 25)
                            -
@@ -522,13 +522,13 @@
   "Test several `thread-last' examples."
   (should (equal (thread-last (+ 40 2)) 42))
   (should (equal (thread-last
-                     5
+                   5
                    (+ 20)
                    (/ 25)
                    -
                    (+ 40)) 39))
   (should (equal (thread-last
-                     (list 1 -2 3 -4 5)
+                   (list 1 -2 3 -4 5)
                    (mapcar #'abs)
                    (cl-reduce #'+)
                    (format "abs sum is: %s"))
@@ -637,6 +637,62 @@
   (should (equal (string-chop-newline "foo\n") "foo"))
   (should (equal (string-chop-newline "foo\nbar\n") "foo\nbar"))
   (should (equal (string-chop-newline "foo\nbar") "foo\nbar")))
+
+(ert-deftest subr-ensure-empty-lines ()
+  (should
+   (equal
+    (with-temp-buffer
+      (insert "foo")
+      (goto-char (point-min))
+      (ensure-empty-lines 2)
+      (buffer-string))
+    "\n\nfoo"))
+  (should
+   (equal
+    (with-temp-buffer
+      (insert "foo")
+      (ensure-empty-lines 2)
+      (buffer-string))
+    "foo\n\n\n"))
+  (should
+   (equal
+    (with-temp-buffer
+      (insert "foo\n")
+      (ensure-empty-lines 2)
+      (buffer-string))
+    "foo\n\n\n"))
+  (should
+   (equal
+    (with-temp-buffer
+      (insert "foo\n\n\n\n\n")
+      (ensure-empty-lines 2)
+      (buffer-string))
+    "foo\n\n\n"))
+  (should
+   (equal
+    (with-temp-buffer
+      (insert "foo\n\n\n")
+      (ensure-empty-lines 0)
+      (buffer-string))
+    "foo\n")))
+
+(ert-deftest test-add-display-text-property ()
+  (with-temp-buffer
+    (insert "Foo bar zot gazonk")
+    (add-display-text-property 4 8 'height 2.0)
+    (add-display-text-property 2 12 'raise 0.5)
+    (should (equal (get-text-property 2 'display) '(raise 0.5)))
+    (should (equal (get-text-property 5 'display)
+                   '((raise 0.5) (height 2.0))))
+    (should (equal (get-text-property 9 'display) '(raise 0.5))))
+  (with-temp-buffer
+    (insert "Foo bar zot gazonk")
+    (put-text-property 4 8 'display [(height 2.0)])
+    (add-display-text-property 2 12 'raise 0.5)
+    (should (equal (get-text-property 2 'display) '(raise 0.5)))
+    (should (equal (get-text-property 5 'display)
+                   [(raise 0.5) (height 2.0)]))
+    (should (equal (get-text-property 9 'display) '(raise 0.5)))))
 
 (provide 'subr-x-tests)
 ;;; subr-x-tests.el ends here

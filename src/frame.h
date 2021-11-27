@@ -449,8 +449,8 @@ struct frame
   /* Non-zero if this frame's faces need to be recomputed.  */
   bool_bf face_change : 1;
 
-  /* Non-zero if this frame's image cache cannot be freed because the
-     frame is in the process of being redisplayed.  */
+  /* Non-zero if this frame's image cache and face cache cannot be
+     freed because the frame is in the process of being redisplayed.  */
   bool_bf inhibit_clear_image_cache : 1;
 
   /* True when new_width or new_height were set by change_frame_size,
@@ -586,6 +586,7 @@ struct frame
     struct w32_output *w32;     /* From w32term.h.  */
     struct ns_output *ns;       /* From nsterm.h.  */
     struct wr_output *wr;       /* From wrsterm.h.  */
+    struct haiku_output *haiku; /* From haikuterm.h. */
   }
   output_data;
 
@@ -857,6 +858,10 @@ default_pixels_per_inch_y (void)
 #define FRAME_WR_P(f) false
 #else
 #define FRAME_WR_P(f) ((f)->output_method == output_wr)
+#ifndef HAVE_HAIKU
+#define FRAME_HAIKU_P(f) false
+#else
+#define FRAME_HAIKU_P(f) ((f)->output_method == output_haiku)
 #endif
 
 /* FRAME_WINDOW_P tests whether the frame is a graphical window system
@@ -872,6 +877,8 @@ default_pixels_per_inch_y (void)
 #endif
 #ifdef USE_WEBRENDER
 #define FRAME_WINDOW_P(f) FRAME_WR_P(f)
+#ifdef HAVE_HAIKU
+#define FRAME_WINDOW_P(f) FRAME_HAIKU_P (f)
 #endif
 #ifndef FRAME_WINDOW_P
 #define FRAME_WINDOW_P(f) ((void) (f), false)

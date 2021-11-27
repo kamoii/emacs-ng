@@ -72,7 +72,7 @@ SYMBOL should be one of `grep-command', `grep-template',
 Some grep programs are able to surround matches with special
 markers in grep output.  Such markers can be used to highlight
 matches in grep mode.  This requires `font-lock-mode' to be active
-in grep buffers, so if you have globally disabled font-lock-mode,
+in grep buffers, so if you have globally disabled `font-lock-mode',
 you will not get highlighting.
 
 This option sets the environment variable GREP_COLORS to specify
@@ -137,7 +137,7 @@ The following place holders should be present in the string:
  <F> - file names and wildcards to search.
  <X> - file names and wildcards to exclude.
  <R> - the regular expression searched for.
- <N> - place to insert null-device.
+ <N> - place to insert `null-device'.
 
 In interactive usage, the actual value of this variable is set up
 by `grep-compute-defaults'; to change the default value, use
@@ -523,7 +523,7 @@ This variable's value takes effect when `grep-compute-defaults' is called."
 ;;;###autoload
 (defvar grep-history nil "History list for grep.")
 ;;;###autoload
-(defvar grep-find-history nil "History list for grep-find.")
+(defvar grep-find-history nil "History list for `grep-find'.")
 
 ;; History of lgrep and rgrep regexp and files args.
 (defvar grep-regexp-history nil)
@@ -1057,11 +1057,9 @@ REGEXP is used as a string in the prompt."
 	       default-extension
 	       (car grep-files-history)
 	       (car (car grep-files-aliases))))
-	 (files (completing-read
-		 (concat "Search for \"" regexp
-			 "\" in files matching wildcard"
-			 (if default (concat " (default " default ")"))
-			 ": ")
+         (files (completing-read
+                 (format-prompt "Search for \"%s\" in files matching wildcard"
+                                default regexp)
 		 #'read-file-name-internal
 		 nil nil nil 'grep-files-history
 		 (delete-dups

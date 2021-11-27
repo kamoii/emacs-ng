@@ -43,7 +43,7 @@
 (require 'text-property-search)
 
 (defgroup shr nil
-  "Simple HTML Renderer"
+  "Simple HTML Renderer."
   :version "25.1"
   :group 'web)
 
@@ -162,6 +162,10 @@ cid: URL as the argument.")
 (defvar shr-put-image-function #'shr-put-image
   "Function called to put image and alt string.")
 
+(defface shr-text '((t :inherit variable-pitch))
+  "Face used for rendering text."
+  :version "29.1")
+
 (defface shr-strike-through '((t :strike-through t))
   "Face for <s> elements."
   :version "24.1")
@@ -182,6 +186,11 @@ temporarily blinks with this face."
   '((t :inherit underline :underline (:style wave)))
   "Face for <abbr> elements."
   :version "27.1")
+
+(defface shr-sup
+  '((t :height 0.8))
+  "Face for <sup> and <sub> elements."
+  :version "29.1")
 
 (defface shr-h1
   '((t :height 1.3 :weight bold))
@@ -247,23 +256,21 @@ and other things:
 (defvar shr-target-id nil
   "Target fragment identifier anchor.")
 
-(defvar shr-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map "a" #'shr-show-alt-text)
-    (define-key map "i" #'shr-browse-image)
-    (define-key map "z" #'shr-zoom-image)
-    (define-key map [?\t] #'shr-next-link)
-    (define-key map [?\M-\t] #'shr-previous-link)
-    (define-key map [follow-link] 'mouse-face)
-    (define-key map [mouse-2] #'shr-browse-url)
-    (define-key map [C-down-mouse-1] #'shr-mouse-browse-url-new-window)
-    (define-key map "I" #'shr-insert-image)
-    (define-key map "w" #'shr-maybe-probe-and-copy-url)
-    (define-key map "u" #'shr-maybe-probe-and-copy-url)
-    (define-key map "v" #'shr-browse-url)
-    (define-key map "O" #'shr-save-contents)
-    (define-key map "\r" #'shr-browse-url)
-    map))
+(defvar-keymap shr-map
+  "a" #'shr-show-alt-text
+  "i" #'shr-browse-image
+  "z" #'shr-zoom-image
+  "TAB" #'shr-next-link
+  "C-M-i" #'shr-previous-link
+  "<follow-link>" 'mouse-face
+  "<mouse-2>" #'shr-browse-url
+  "C-<down-mouse-1>" #'shr-mouse-browse-url-new-window
+  "I" #'shr-insert-image
+  "w" #'shr-maybe-probe-and-copy-url
+  "u" #'shr-maybe-probe-and-copy-url
+  "v" #'shr-browse-url
+  "O" #'shr-save-contents
+  "RET" #'shr-browse-url)
 
 (defvar shr-image-map
   (let ((map (copy-keymap shr-map)))
@@ -739,7 +746,7 @@ size, and full-buffer size."
 	  (when shr-use-fonts
 	    (put-text-property font-start (point)
 			       'face
-			       (or shr-current-font 'variable-pitch)))))))))
+			       (or shr-current-font 'shr-text)))))))))
 
 (defun shr-fill-lines (start end)
   (if (<= shr-internal-width 0)
@@ -1139,7 +1146,7 @@ the mouse click event."
 
 ;; Behind display-graphic-p test.
 (declare-function image-size "image.c" (spec &optional pixels frame))
-(declare-function image-animate "image" (image &optional index limit))
+(declare-function image-animate "image" (image &optional index limit position))
 
 (defun shr-put-image (spec alt &optional flags)
   "Insert image SPEC with a string ALT.  Return image.
@@ -1176,13 +1183,14 @@ element is the data blob and the second element is the content-type."
 	  (when (and (> (current-column) 0)
 		     (> (car (image-size image t)) 400))
 	    (insert "\n"))
-	  (if (eq size 'original)
-	      (insert-sliced-image image (or alt "*") nil 20 1)
-	    (insert-image image (or alt "*")))
-	  (put-text-property start (point) 'image-size size)
-	  (when (and shr-image-animate
-                     (cdr (image-multi-frame-p image)))
-            (image-animate image nil 60)))
+          (let ((image-pos (point)))
+	    (if (eq size 'original)
+	        (insert-sliced-image image (or alt "*") nil 20 1)
+	      (insert-image image (or alt "*")))
+	    (put-text-property start (point) 'image-size size)
+	    (when (and shr-image-animate
+                       (cdr (image-multi-frame-p image)))
+              (image-animate image nil 60 image-pos))))
 	image)
     (insert (or alt ""))))
 
@@ -1465,12 +1473,14 @@ ones, in case fg and bg are nil."
 (defun shr-tag-sup (dom)
   (let ((start (point)))
     (shr-generic dom)
-    (put-text-property start (point) 'display '(raise 0.2))))
+    (put-text-property start (point) 'display '(raise 0.2))
+    (add-face-text-property start (point) 'shr-sup)))
 
 (defun shr-tag-sub (dom)
   (let ((start (point)))
     (shr-generic dom)
-    (put-text-property start (point) 'display '(raise -0.2))))
+    (put-text-property start (point) 'display '(raise -0.2))
+    (add-face-text-property start (point) 'shr-sup)))
 
 (defun shr-tag-p (dom)
   (shr-ensure-paragraph)
@@ -1574,15 +1584,14 @@ ones, in case fg and bg are nil."
       (shr-urlify (or shr-start start) (shr-expand-url url) title))))
 
 (defun shr-tag-abbr (dom)
-  (when-let* ((title (dom-attr dom 'title))
-	      (start (point)))
+  (let ((title (dom-attr dom 'title))
+	(start (point)))
     (shr-generic dom)
     (shr-add-font start (point) 'shr-abbreviation)
-    (add-text-properties
-     start (point)
-     (list
-      'help-echo title
-      'mouse-face 'highlight))))
+    (when title
+      (add-text-properties start (point)
+                           (list 'help-echo title
+                                 'mouse-face 'highlight)))))
 
 (defun shr-tag-acronym (dom)
   ;; `acronym' is deprecated in favor of `abbr'.
@@ -1629,6 +1638,14 @@ url if no type is specified.  The value should be a float in the range 0.0 to
   :version "24.4"
   :type '(alist :key-type regexp :value-type float))
 
+(defcustom shr-use-xwidgets-for-media nil
+  "If non-nil, use xwidgets to display video and audio elements.
+This also depends on Emacs being built with xwidgets capability.
+Note that this is experimental, and may lead to instability on
+some platforms."
+  :type 'boolean
+  :version "29.1")
+
 (defun shr--get-media-pref (elem)
   "Determine the preference for ELEM.
 The preference is a float determined from `shr-prefer-media-type'."
@@ -1665,16 +1682,39 @@ The preference is a float determined from `shr-prefer-media-type'."
                       pref (cdr ret)))))))))
   (cons url pref))
 
+(declare-function xwidget-webkit-execute-script "xwidget.c"
+                  (xwidget script &optional callback))
+
 (defun shr-tag-video (dom)
   (let ((image (dom-attr dom 'poster))
         (url (dom-attr dom 'src))
         (start (point)))
     (unless url
       (setq url (car (shr--extract-best-source dom))))
-    (if (> (length image) 0)
-	(shr-indirect-call 'img nil image)
-      (shr-insert " [video] "))
-    (shr-urlify start (shr-expand-url url))))
+    (if (and shr-use-xwidgets-for-media
+             (fboundp 'make-xwidget))
+        ;; Play the video.
+        (progn
+          (require 'xwidget)
+          (let ((widget (make-xwidget
+                         'webkit
+			 "Video"
+                         (truncate (* (window-pixel-width) 0.8))
+                         (truncate (* (window-pixel-width) 0.8 0.75)))))
+            (insert
+             (propertize
+              " [video] "
+              'display (list 'xwidget :xwidget widget)))
+            (xwidget-webkit-execute-script
+             widget (format "document.body.innerHTML = %S;"
+                            (format
+                             "<style>body { margin: 0px; }</style><div style='background: black; height: 100%%; display: flex; align-items: center; justify-content: center;'><video autoplay loop muted controls style='max-width: 100%%; max-height: 100%%;'><source src=%S type='video/mp4'></source></video></div>"
+                             url)))))
+      ;; No xwidgets.
+      (if (> (length image) 0)
+	  (shr-indirect-call 'img nil image)
+        (shr-insert " [video] "))
+      (shr-urlify start (shr-expand-url url)))))
 
 (defun shr-tag-audio (dom)
   (let ((url (dom-attr dom 'src))

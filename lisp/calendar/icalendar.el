@@ -644,13 +644,13 @@ FIXME: multiple comma-separated values should be allowed!"
           ;; seconds present
           (setq second (read (substring isodatetimestring 13 15))))
 	;; FIXME: Support subseconds.
-        (when (and (> (length isodatetimestring) 15)
-                   ;; UTC specifier present
-                   (char-equal ?Z (aref isodatetimestring 15)))
-          (setq source-zone t
-                ;; decode to local time unless result-zone is explicitly given,
-                ;; i.e. do not decode to UTC, i.e. do not (setq result-zone t)
-                ))
+        (when (> (length isodatetimestring) 15)
+          (cl-case (aref isodatetimestring 15)
+            (?Z
+             (setq source-zone t))
+            ((?- ?+)
+             (setq source-zone
+                   (concat "UTC" (substring isodatetimestring 15))))))
         ;; shift if necessary
         (if day-shift
             (let ((mdy (calendar-gregorian-from-absolute
@@ -1749,7 +1749,7 @@ entries.  ENTRY-MAIN is the first line of the diary entry."
 (defun icalendar--convert-float-to-ical (nonmarker entry-main)
   "Convert float diary entry to iCalendar format -- partially unsupported!
 
-  FIXME! DAY from diary-float yet unimplemented.
+  FIXME! DAY from `diary-float' yet unimplemented.
 
   NONMARKER is a regular expression matching the start of non-marking
   entries.  ENTRY-MAIN is the first line of the diary entry."
@@ -2182,8 +2182,7 @@ written into the buffer `*icalendar-errors*'."
               (setq diary-string "")
               (mapc (lambda (_datestring)
 		      (setq diary-string
-			    (concat diary-string
-				    (format "......"))))
+			    (concat diary-string "......")))
 		    (icalendar--split-value rdate)))
              ;; non-recurring event
              ;; all-day event
@@ -2528,7 +2527,7 @@ the entry."
                                       summary)))
     (when summary
       (setq non-marking
-            (y-or-n-p (format "Make appointment non-marking? "))))
+            (y-or-n-p "Make appointment non-marking? ")))
     (unless diary-filename
       (setq diary-filename
             (read-file-name "Add appointment to this diary file: ")))

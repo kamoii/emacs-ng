@@ -32,7 +32,7 @@
 ;; Here is a brief explanation how this code works.
 ;; Firstly, we analyze the tree by calling cconv-analyze-form.
 ;; This function finds all mutated variables, all functions that are suitable
-;; for lambda lifting and all variables captured by closure. It passes the tree
+;; for lambda lifting and all variables captured by closure.  It passes the tree
 ;; once, returning a list of three lists.
 ;;
 ;; Then we calculate the intersection of the first and third lists returned by
@@ -608,10 +608,9 @@ FORM is the parent form that binds this var."
     (`((,(and var (guard (eq ?_ (aref (symbol-name var) 0)))) . ,_)
        ,_ ,_ ,_ ,_)
      ;; FIXME: Convert this warning to use `macroexp--warn-wrap'
-     ;; so as to give better position information and obey
-     ;; `byte-compile-warnings'.
-     (byte-compile-warn
-      "%s `%S' not left unused" varkind var))
+     ;; so as to give better position information.
+     (when (byte-compile-warning-enabled-p 'not-unused var)
+       (byte-compile-warn "%s `%S' not left unused" varkind var)))
     ((and (let (or 'let* 'let) (car form))
           `((,var) ;; (or `(,var nil) : Too many false positives: bug#47080
             t nil ,_ ,_))
@@ -794,6 +793,8 @@ This function does not return anything but instead fills the
     ;; (`(declare . ,_) nil)               ;The args don't contain code.
 
     (`(,_ . ,body-forms)    ; First element is a function or whatever.
+     (unless (listp body-forms)
+       (signal 'wrong-type-argument (list 'proper-list-p form)))
      (dolist (form body-forms) (cconv-analyze-form form env)))
 
     ((pred symbolp)

@@ -693,7 +693,7 @@ To evaluate a form without viewing the buffer, see `ibuffer-do-eval'."
 (defun ibuffer-included-in-filters-p (buf filters)
   "Return non-nil if BUF passes all FILTERS.
 
-BUF is a lisp buffer object, and FILTERS is a list of filter
+BUF is a Lisp buffer object, and FILTERS is a list of filter
 specifications with the same structure as
 `ibuffer-filtering-qualifiers'."
   (not
@@ -714,7 +714,7 @@ where operand d is itself a cons cell, or nil.  Returns d."
 (defun ibuffer-included-in-filter-p (buf filter)
   "Return non-nil if BUF pass FILTER.
 
-BUF is a lisp buffer object, and FILTER is a filter
+BUF is a Lisp buffer object, and FILTER is a filter
 specification, with the same structure as an element of the list
 `ibuffer-filtering-qualifiers'."
   (if (eq (car filter) 'not)
@@ -1210,7 +1210,7 @@ Interactively, prompt for NAME, and use the current filters."
     (_
      (let ((type (assq (car qualifier) ibuffer-filtering-alist)))
        (unless qualifier
-         (error "Ibuffer: bad qualifier %s" qualifier))
+         (error "Ibuffer: Bad qualifier %s" qualifier))
        (concat " [" (cadr type) ": " (format "%s]" (cdr qualifier)))))))
 
 (defun ibuffer-list-buffer-modes (&optional include-parents)
@@ -1597,7 +1597,10 @@ to move by.  The default is `ibuffer-marked-char'."
   "Hide all of the currently marked lines."
   (interactive)
   (if (= (ibuffer-count-marked-lines) 0)
-      (message "No buffers marked; use `m' to mark a buffer")
+      (message (substitute-command-keys
+                (concat
+                 "No buffers marked; use \\<ibuffer-mode-map>"
+                 "\\[ibuffer-mark-forward] to mark a buffer")))
     (let ((count
 	   (ibuffer-map-marked-lines
             (lambda (_buf _mark)

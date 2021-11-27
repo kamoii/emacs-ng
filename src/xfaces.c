@@ -246,6 +246,10 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #ifdef HAVE_NS
 #define GCGraphicsExposures 0
 #endif /* HAVE_NS */
+
+#ifdef HAVE_HAIKU
+#define GCGraphicsExposures 0
+#endif /* HAVE_HAIKU */
 #endif /* HAVE_WINDOW_SYSTEM */
 
 #include "buffer.h"
@@ -555,8 +559,8 @@ x_free_gc (struct frame *f, Emacs_GC *gc)
 
 #endif  /* HAVE_NTGUI */
 
-#ifdef HAVE_NS
-/* NS emulation of GCs */
+#if defined (HAVE_NS) || defined (HAVE_HAIKU)
+/* NS and Haiku emulation of GCs */
 
 static Emacs_GC *
 x_create_gc (struct frame *f,
@@ -694,7 +698,8 @@ clear_face_cache (bool clear_fonts_p)
 	{
 	  struct frame *f = XFRAME (frame);
 	  if (FRAME_WINDOW_P (f)
-	      && FRAME_DISPLAY_INFO (f)->n_fonts > CLEAR_FONT_TABLE_NFONTS)
+	      && FRAME_DISPLAY_INFO (f)->n_fonts > CLEAR_FONT_TABLE_NFONTS
+	      && !f->inhibit_clear_image_cache)
 	    {
 	      clear_font_cache (f);
 	      free_all_realized_faces (frame);
@@ -1433,52 +1438,6 @@ enum xlfd_field
   XLFD_REGISTRY,
   XLFD_ENCODING,
   XLFD_LAST
-};
-
-/* An enumerator for each possible slant value of a font.  Taken from
-   the XLFD specification.  */
-
-enum xlfd_slant
-{
-  XLFD_SLANT_UNKNOWN,
-  XLFD_SLANT_ROMAN,
-  XLFD_SLANT_ITALIC,
-  XLFD_SLANT_OBLIQUE,
-  XLFD_SLANT_REVERSE_ITALIC,
-  XLFD_SLANT_REVERSE_OBLIQUE,
-  XLFD_SLANT_OTHER
-};
-
-/* Relative font weight according to XLFD documentation.  */
-
-enum xlfd_weight
-{
-  XLFD_WEIGHT_UNKNOWN,
-  XLFD_WEIGHT_ULTRA_LIGHT,	/* 10 */
-  XLFD_WEIGHT_EXTRA_LIGHT,	/* 20 */
-  XLFD_WEIGHT_LIGHT,		/* 30 */
-  XLFD_WEIGHT_SEMI_LIGHT,	/* 40: SemiLight, Book, ...  */
-  XLFD_WEIGHT_MEDIUM,		/* 50: Medium, Normal, Regular, ...  */
-  XLFD_WEIGHT_SEMI_BOLD,	/* 60: SemiBold, DemiBold, ...  */
-  XLFD_WEIGHT_BOLD,		/* 70: Bold, ... */
-  XLFD_WEIGHT_EXTRA_BOLD,	/* 80: ExtraBold, Heavy, ...  */
-  XLFD_WEIGHT_ULTRA_BOLD	/* 90: UltraBold, Black, ...  */
-};
-
-/* Relative proportionate width.  */
-
-enum xlfd_swidth
-{
-  XLFD_SWIDTH_UNKNOWN,
-  XLFD_SWIDTH_ULTRA_CONDENSED,	/* 10 */
-  XLFD_SWIDTH_EXTRA_CONDENSED,	/* 20 */
-  XLFD_SWIDTH_CONDENSED,	/* 30: Condensed, Narrow, Compressed, ... */
-  XLFD_SWIDTH_SEMI_CONDENSED,	/* 40: semicondensed */
-  XLFD_SWIDTH_MEDIUM,		/* 50: Medium, Normal, Regular, ... */
-  XLFD_SWIDTH_SEMI_EXPANDED,	/* 60: SemiExpanded, DemiExpanded, ... */
-  XLFD_SWIDTH_EXPANDED,		/* 70: Expanded... */
-  XLFD_SWIDTH_EXTRA_EXPANDED,	/* 80: ExtraExpanded, Wide...  */
-  XLFD_SWIDTH_ULTRA_EXPANDED	/* 90: UltraExpanded... */
 };
 
 /* Order by which font selection chooses fonts.  The default values
@@ -2439,11 +2398,11 @@ evaluate_face_filter (Lisp_Object filter, struct window *w,
 /* Determine whether FACE_REF is a "filter" face specification (case
    #4 in merge_face_ref).  If it is, evaluate the filter, and if the
    filter matches, return the filtered face spec.  If the filter does
-   not match, return `nil'.  If FACE_REF is not a filtered face
+   not match, return nil.  If FACE_REF is not a filtered face
    specification, return FACE_REF.
 
    On error, set *OK to false, having logged an error message if
-   ERR_MSGS is true, and return `nil'.  Otherwise, *OK is not touched.
+   ERR_MSGS is true, and return nil.  Otherwise, *OK is not touched.
 
    W is either NULL or a window used to evaluate filters.  If W is
    NULL, no window-based face specification filter matches.
@@ -2728,7 +2687,7 @@ merge_face_ref (struct window *w,
 		{
 		  if (EQ (value, Qt))
 		    value = make_fixnum (1);
-		  if (FIXNUMP (value)
+		  if ((FIXNUMP (value) && XFIXNUM (value) != 0)
 		      || STRINGP (value)
 		      || CONSP (value)
 		      || NILP (value))
@@ -4902,7 +4861,7 @@ lookup_named_face (struct window *w, struct frame *f,
 
 /* Return the display face-id of the basic face whose canonical face-id
    is FACE_ID.  The return value will usually simply be FACE_ID, unless that
-   basic face has bee remapped via Vface_remapping_alist.  This function is
+   basic face has been remapped via Vface_remapping_alist.  This function is
    conservative: if something goes wrong, it will simply return FACE_ID
    rather than signal an error.  Window W, if non-NULL, is used to filter
    face specifications for remapping.  */
@@ -4918,7 +4877,7 @@ lookup_basic_face (struct window *w, struct frame *f, int face_id)
   switch (face_id)
     {
     case DEFAULT_FACE_ID:		name = Qdefault;		break;
-    case MODE_LINE_FACE_ID:		name = Qmode_line;		break;
+    case MODE_LINE_ACTIVE_FACE_ID:	name = Qmode_line_active;      	break;
     case MODE_LINE_INACTIVE_FACE_ID:	name = Qmode_line_inactive;	break;
     case HEADER_LINE_FACE_ID:		name = Qheader_line;		break;
     case TAB_LINE_FACE_ID:		name = Qtab_line;		break;
@@ -5112,8 +5071,8 @@ gui_supports_face_attributes_p (struct frame *f,
 {
   Lisp_Object *def_attrs = def_face->lface;
 
-  /* Check that other specified attributes are different that the default
-     face.  */
+  /* Check that other specified attributes are different from the
+     default face.  */
   if ((!UNSPECIFIEDP (attrs[LFACE_UNDERLINE_INDEX])
        && face_attr_equal_p (attrs[LFACE_UNDERLINE_INDEX],
 			     def_attrs[LFACE_UNDERLINE_INDEX]))
@@ -5392,6 +5351,10 @@ DEFUN ("display-supports-face-attributes-p",
 The optional argument DISPLAY can be a display name, a frame, or
 nil (meaning the selected frame's display).
 
+For instance, to check whether the display supports underlining:
+
+  (display-supports-face-attributes-p \\='(:underline t))
+
 The definition of `supported' is somewhat heuristic, but basically means
 that a face containing all the attributes in ATTRIBUTES, when merged
 with the default face for display, can be represented in a way that's
@@ -5626,6 +5589,7 @@ realize_basic_faces (struct frame *f)
   if (realize_default_face (f))
     {
       realize_named_face (f, Qmode_line, MODE_LINE_FACE_ID);
+      realize_named_face (f, Qmode_line_active, MODE_LINE_ACTIVE_FACE_ID);
       realize_named_face (f, Qmode_line_inactive, MODE_LINE_INACTIVE_FACE_ID);
       realize_named_face (f, Qtool_bar, TOOL_BAR_FACE_ID);
       realize_named_face (f, Qfringe, FRINGE_FACE_ID);
@@ -6429,20 +6393,19 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
     int face_id;
 
     if (base_face_id >= 0)
-      {
-	face_id = base_face_id;
-	/* Make sure the base face ID is usable: if someone freed the
-	   cached faces since we've looked up the base face, we need
-	   to look it up again.  */
-	if (!FACE_FROM_ID_OR_NULL (f, face_id))
-	  face_id = lookup_basic_face (w, f, DEFAULT_FACE_ID);
-      }
+      face_id = base_face_id;
     else if (NILP (Vface_remapping_alist))
       face_id = DEFAULT_FACE_ID;
     else
       face_id = lookup_basic_face (w, f, DEFAULT_FACE_ID);
 
-    default_face = FACE_FROM_ID (f, face_id);
+    default_face = FACE_FROM_ID_OR_NULL (f, face_id);
+    /* Make sure the default face ID is usable: if someone freed the
+       cached faces since we've looked up these faces, we need to look
+       them up again.  */
+    if (!default_face)
+      default_face = FACE_FROM_ID (f,
+				   lookup_basic_face (w, f, DEFAULT_FACE_ID));
   }
 
   /* Optimize common cases where we can use the default face.  */
@@ -6627,7 +6590,9 @@ face_at_string_position (struct window *w, Lisp_Object string,
   else
     *endptr = -1;
 
-  base_face = FACE_FROM_ID (f, base_face_id);
+  base_face = FACE_FROM_ID_OR_NULL (f, base_face_id);
+  if (!base_face)
+    base_face = FACE_FROM_ID (f, lookup_basic_face (w, f, DEFAULT_FACE_ID));
 
   /* Optimize the default case that there is no face property.  */
   if (NILP (prop)
@@ -6952,13 +6917,20 @@ syms_of_xfaces (void)
   DEFSYM (Qpressed_button, "pressed-button");
   DEFSYM (Qflat_button, "flat-button");
   DEFSYM (Qnormal, "normal");
+  DEFSYM (Qthin, "thin");
   DEFSYM (Qextra_light, "extra-light");
+  DEFSYM (Qultra_light, "ultra-light");
   DEFSYM (Qlight, "light");
   DEFSYM (Qsemi_light, "semi-light");
+  DEFSYM (Qmedium, "medium");
   DEFSYM (Qsemi_bold, "semi-bold");
+  DEFSYM (Qbook, "book");
   DEFSYM (Qbold, "bold");
   DEFSYM (Qextra_bold, "extra-bold");
   DEFSYM (Qultra_bold, "ultra-bold");
+  DEFSYM (Qheavy, "heavy");
+  DEFSYM (Qultra_heavy, "ultra-heavy");
+  DEFSYM (Qblack, "black");
   DEFSYM (Qoblique, "oblique");
   DEFSYM (Qitalic, "italic");
 
@@ -6994,6 +6966,7 @@ syms_of_xfaces (void)
   DEFSYM (Qborder, "border");
   DEFSYM (Qmouse, "mouse");
   DEFSYM (Qmode_line_inactive, "mode-line-inactive");
+  DEFSYM (Qmode_line_active, "mode-line-active");
   DEFSYM (Qvertical_border, "vertical-border");
   DEFSYM (Qwindow_divider, "window-divider");
   DEFSYM (Qwindow_divider_first_pixel, "window-divider-first-pixel");

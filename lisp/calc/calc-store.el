@@ -188,12 +188,15 @@
   (let* ((calc-store-opers store-opers)
          (var (concat
               "var-"
-              (let ((minibuffer-completion-table
-                     (mapcar (lambda (x) (substring x 4))
-                             (all-completions "var-" obarray)))
-                    (minibuffer-completion-predicate
-                     (lambda (x) (boundp (intern (concat "var-" x)))))
-                    (minibuffer-completion-confirm t))
+              (minibuffer-with-setup-hook
+                  (lambda ()
+                    (setq-local minibuffer-completion-table
+                                (mapcar (lambda (x) (substring x 4))
+                                        (all-completions "var-" obarray)))
+                    (setq-local minibuffer-completion-predicate
+                                (lambda (x)
+                                  (boundp (intern (concat "var-" x)))))
+                    (setq-local minibuffer-completion-confirm t))
                 (read-from-minibuffer
                  prompt nil calc-var-name-map nil
                  'calc-read-var-name-history)))))
@@ -586,7 +589,7 @@
 (defun calc-permanent-variable (&optional var)
   (interactive)
   (calc-wrapper
-   (or var (setq var (calc-read-var-name "Save variable (default all): ")))
+   (or var (setq var (calc-read-var-name (format-prompt "Save variable" "all"))))
    (let (calc-pv-pos)
      (and var (or (and (boundp var) (symbol-value var))
 		  (error "No such variable")))

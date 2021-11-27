@@ -491,8 +491,13 @@ confirm the aborting of the current minibuffer and all contained ones.  */)
       array[1] = make_fixnum (minibuf_level - minibuf_depth + 1);
       if (!NILP (Fyes_or_no_p (Fformat (2, array))))
 	{
-	  minibuffer_quit_level = minibuf_depth;
-	  Fthrow (Qexit, Qt);
+	  /* Due to the above check, the current minibuffer is in the
+	     most nested command loop, which means that we don't have
+	     to abort any extra non-minibuffer recursive edits.  Thus,
+	     the number of recursive edits we have to abort equals the
+	     number of minibuffers we have to abort.  */
+	  CALLN (Ffuncall, intern ("minibuffer-quit-recursive-edit"),
+		 array[1]);
 	}
     }
   else
@@ -1000,7 +1005,7 @@ set_minibuffer_mode (Lisp_Object buf, EMACS_INT depth)
       if (!NILP (Ffboundp (Qminibuffer_inactive_mode)))
 	call0 (Qminibuffer_inactive_mode);
       else
-	Fkill_all_local_variables ();
+	Fkill_all_local_variables (Qnil);
     }
   buf = unbind_to (count, buf);
 }
@@ -1287,8 +1292,8 @@ Fifth arg HIST, if non-nil, specifies a history list and optionally
   HISTPOS is the initial position for use by the minibuffer history
   commands.  For consistency, you should also specify that element of
   the history as the value of INITIAL-CONTENTS.  Positions are counted
-  starting from 1 at the beginning of the list.  If HIST is the symbol
-  `t', history is not recorded.
+  starting from 1 at the beginning of the list.  If HIST is t, history
+  is not recorded.
 
   If `history-add-new-input' is non-nil (the default), the result will
   be added to the history list using `add-to-history'.
@@ -1540,6 +1545,27 @@ minibuf_conform_representation (Lisp_Object string, Lisp_Object basis)
     return Fstring_make_multibyte (string);
 }
 
+static bool
+match_regexps (Lisp_Object string, Lisp_Object regexps,
+	       bool ignore_case)
+{
+  ptrdiff_t val;
+  for (; CONSP (regexps); regexps = XCDR (regexps))
+    {
+      CHECK_STRING (XCAR (regexps));
+
+      val = fast_string_match_internal
+	(XCAR (regexps), string,
+	 (ignore_case ? BVAR (current_buffer, case_canon_table) : Qnil));
+
+      if (val == -2)
+	error ("Stack overflow in regexp matcher");
+      if (val < 0)
+	return false;
+    }
+  return true;
+}
+
 DEFUN ("try-completion", Ftry_completion, Stry_completion, 2, 3, 0,
        doc: /* Return common substring of all completions of STRING in COLLECTION.
 Test each possible completion specified by COLLECTION
@@ -1573,6 +1599,7 @@ Additionally to this predicate, `completion-regexp-list'
 is used to further constrain the set of candidates.  */)
   (Lisp_Object string, Lisp_Object collection, Lisp_Object predicate)
 {
+
   Lisp_Object bestmatch, tail, elt, eltstring;
   /* Size in bytes of BESTMATCH.  */
   ptrdiff_t bestmatchsize = 0;
@@ -1586,7 +1613,6 @@ is used to further constrain the set of candidates.  */)
 	       ? list_table : function_table));
   ptrdiff_t idx = 0, obsize = 0;
   int matchcount = 0;
-  ptrdiff_t bindcount = -1;
   Lisp_Object bucket, zero, end, tem;
 
   CHECK_STRING (string);
@@ -1665,27 +1691,10 @@ is used to further constrain the set of candidates.  */)
 				      completion_ignore_case ? Qt : Qnil),
 	      EQ (Qt, tem)))
 	{
-	  /* Yes.  */
-	  Lisp_Object regexps;
-
 	  /* Ignore this element if it fails to match all the regexps.  */
-	  {
-	    for (regexps = Vcompletion_regexp_list; CONSP (regexps);
-		 regexps = XCDR (regexps))
-	      {
-		if (bindcount < 0)
-		  {
-		    bindcount = SPECPDL_INDEX ();
-		    specbind (Qcase_fold_search,
-			      completion_ignore_case ? Qt : Qnil);
-		  }
-		tem = Fstring_match (XCAR (regexps), eltstring, zero);
-		if (NILP (tem))
-		  break;
-	      }
-	    if (CONSP (regexps))
-	      continue;
-	  }
+	  if (!match_regexps (eltstring, Vcompletion_regexp_list,
+			      completion_ignore_case))
+	    continue;
 
 	  /* Ignore this element if there is a predicate
 	     and the predicate doesn't like it.  */
@@ -1696,11 +1705,6 @@ is used to further constrain the set of candidates.  */)
 		tem = Fcommandp (elt, Qnil);
 	      else
 		{
-		  if (bindcount >= 0)
-		    {
-		      unbind_to (bindcount, Qnil);
-		      bindcount = -1;
-		    }
 		  tem = (type == hash_table
 			 ? call2 (predicate, elt,
 				  HASH_VALUE (XHASH_TABLE (collection),
@@ -1782,9 +1786,6 @@ is used to further constrain the set of candidates.  */)
 	}
     }
 
-  if (bindcount >= 0)
-    unbind_to (bindcount, Qnil);
-
   if (NILP (bestmatch))
     return Qnil;		/* No completions found.  */
   /* If we are ignoring case, and there is no exact match,
@@ -1844,7 +1845,6 @@ with a space are ignored unless STRING itself starts with a space.  */)
     : VECTORP (collection) ? 2
     : NILP (collection) || (CONSP (collection) && !FUNCTIONP (collection));
   ptrdiff_t idx = 0, obsize = 0;
-  ptrdiff_t bindcount = -1;
   Lisp_Object bucket, tem, zero;
 
   CHECK_STRING (string);
@@ -1929,27 +1929,10 @@ with a space are ignored unless STRING itself starts with a space.  */)
 				      completion_ignore_case ? Qt : Qnil),
 	      EQ (Qt, tem)))
 	{
-	  /* Yes.  */
-	  Lisp_Object regexps;
-
 	  /* Ignore this element if it fails to match all the regexps.  */
-	  {
-	    for (regexps = Vcompletion_regexp_list; CONSP (regexps);
-		 regexps = XCDR (regexps))
-	      {
-		if (bindcount < 0)
-		  {
-		    bindcount = SPECPDL_INDEX ();
-		    specbind (Qcase_fold_search,
-			      completion_ignore_case ? Qt : Qnil);
-		  }
-		tem = Fstring_match (XCAR (regexps), eltstring, zero);
-		if (NILP (tem))
-		  break;
-	      }
-	    if (CONSP (regexps))
-	      continue;
-	  }
+	  if (!match_regexps (eltstring, Vcompletion_regexp_list,
+			      completion_ignore_case))
+	    continue;
 
 	  /* Ignore this element if there is a predicate
 	     and the predicate doesn't like it.  */
@@ -1960,11 +1943,6 @@ with a space are ignored unless STRING itself starts with a space.  */)
 		tem = Fcommandp (elt, Qnil);
 	      else
 		{
-		  if (bindcount >= 0)
-		    {
-		      unbind_to (bindcount, Qnil);
-		      bindcount = -1;
-		    }
 		  tem = type == 3
 		    ? call2 (predicate, elt,
 			     HASH_VALUE (XHASH_TABLE (collection), idx - 1))
@@ -1976,9 +1954,6 @@ with a space are ignored unless STRING itself starts with a space.  */)
 	  allmatches = Fcons (eltstring, allmatches);
 	}
     }
-
-  if (bindcount >= 0)
-    unbind_to (bindcount, Qnil);
 
   return Fnreverse (allmatches);
 }
@@ -2032,8 +2007,7 @@ HIST, if non-nil, specifies a history list and optionally the initial
   (This is the only case in which you should use INITIAL-INPUT instead
   of DEF.)  Positions are counted starting from 1 at the beginning of
   the list.  The variable `history-length' controls the maximum length
-  of a history list.  If HIST is the symbol `t', history is not
-  recorded.
+  of a history list.  If HIST is t, history is not recorded.
 
 DEF, if non-nil, is the default value or the list of default values.
 
@@ -2055,12 +2029,16 @@ See also `completing-read-function'.  */)
 /* Test whether TXT is an exact completion.  */
 DEFUN ("test-completion", Ftest_completion, Stest_completion, 2, 3, 0,
        doc: /* Return non-nil if STRING is a valid completion.
+For instance, if COLLECTION is a list of strings, STRING is a
+valid completion if it appears in the list and PREDICATE is satisfied.
+
 Takes the same arguments as `all-completions' and `try-completion'.
+
 If COLLECTION is a function, it is called with three arguments:
 the values STRING, PREDICATE and `lambda'.  */)
   (Lisp_Object string, Lisp_Object collection, Lisp_Object predicate)
 {
-  Lisp_Object regexps, tail, tem = Qnil;
+  Lisp_Object tail, tem = Qnil;
   ptrdiff_t i = 0;
 
   CHECK_STRING (string);
@@ -2146,20 +2124,9 @@ the values STRING, PREDICATE and `lambda'.  */)
     return call3 (collection, string, predicate, Qlambda);
 
   /* Reject this element if it fails to match all the regexps.  */
-  if (CONSP (Vcompletion_regexp_list))
-    {
-      ptrdiff_t count = SPECPDL_INDEX ();
-      specbind (Qcase_fold_search, completion_ignore_case ? Qt : Qnil);
-      for (regexps = Vcompletion_regexp_list; CONSP (regexps);
-	   regexps = XCDR (regexps))
-	{
-          /* We can test against STRING, because if we got here, then
-             the element is equivalent to it.  */
-          if (NILP (Fstring_match (XCAR (regexps), string, Qnil)))
-	    return unbind_to (count, Qnil);
-	}
-      unbind_to (count, Qnil);
-    }
+  if (!match_regexps (string, Vcompletion_regexp_list,
+		      completion_ignore_case))
+    return Qnil;
 
   /* Finally, check the predicate.  */
   if (!NILP (predicate))
@@ -2477,7 +2444,7 @@ is added with
   (set minibuffer-history-variable
        (cons STRING (symbol-value minibuffer-history-variable)))
 
- If the variable is the symbol `t', no history is recorded.  */);
+ If the variable is t, no history is recorded.  */);
   XSETFASTINT (Vminibuffer_history_variable, 0);
 
   DEFVAR_LISP ("minibuffer-history-position", Vminibuffer_history_position,

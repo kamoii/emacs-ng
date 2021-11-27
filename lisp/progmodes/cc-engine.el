@@ -165,12 +165,16 @@
 (defvar c-doc-line-join-end-ch)
 (defvar c-syntactic-context)
 (defvar c-syntactic-element)
+(defvar c-new-id-start)
+(defvar c-new-id-end)
+(defvar c-new-id-is-type)
 (cc-bytecomp-defvar c-min-syn-tab-mkr)
 (cc-bytecomp-defvar c-max-syn-tab-mkr)
 (cc-bytecomp-defun c-clear-syn-tab)
 (cc-bytecomp-defun c-clear-string-fences)
 (cc-bytecomp-defun c-restore-string-fences)
 (cc-bytecomp-defun c-remove-string-fences)
+(cc-bytecomp-defun c-fontify-new-found-type)
 
 
 ;; Make declarations for all the `c-lang-defvar' variables in cc-langs.
@@ -1545,7 +1549,7 @@ comment at the start of cc-engine.el for more info."
 	    nil))))))
 
 (defun c-at-statement-start-p ()
-  "Return non-nil if the point is at the first token in a statement
+  "Return non-nil if point is at the first token in a statement
 or somewhere in the syntactic whitespace before it.
 
 A \"statement\" here is not restricted to those inside code blocks.
@@ -1574,7 +1578,7 @@ comment at the start of cc-engine.el for more info."
 	  (c-crosses-statement-barrier-p (point) end)))))
 
 (defun c-at-expression-start-p ()
-  "Return non-nil if the point is at the first token in an expression or
+  "Return non-nil if point is at the first token in an expression or
 statement, or somewhere in the syntactic whitespace before it.
 
 An \"expression\" here is a bit different from the normal language
@@ -1731,7 +1735,7 @@ Line continuations, i.e. a backslashes followed by line breaks, are
 treated as whitespace.  The line breaks that end line comments are
 considered to be the comment enders, so the point cannot be at the end
 of the same line to move over a line comment.  Unlike
-c-backward-syntactic-ws, this function doesn't move back over
+`c-backward-syntactic-ws', this function doesn't move back over
 preprocessor directives.
 
 Note that this function might do hidden buffer changes.  See the
@@ -3210,7 +3214,7 @@ comment at the start of cc-engine.el for more info."
 This function should be added to the `before-change-functions'
 hook by major modes that use CC Mode's filling functionality
 without initializing CC Mode.  Currently (2020-06) these are
-js-mode and mhtml-mode."
+`js-mode' and `mhtml-mode'."
   (c-truncate-lit-pos-cache beg))
 
 (defun c-foreign-init-lit-pos-cache ()
@@ -3218,8 +3222,8 @@ js-mode and mhtml-mode."
 
 This function should be called from the mode functions of major
 modes which use CC Mode's filling functionality without
-initializing CC Mode.  Currently (2020-06) these are js-mode and
-mhtml-mode."
+initializing CC Mode.  Currently (2020-06) these are `js-mode' and
+`mhtml-mode'."
   (c-truncate-lit-pos-cache 1))
 
 
@@ -4969,7 +4973,7 @@ out of an enclosing paren."
 	     nil))))
 
 (defun c-forward-over-token-and-ws (&optional balanced)
-  "Move forward over a token and any following whitespace
+  "Move forward over a token and any following whitespace.
 Return t if we moved, nil otherwise (i.e. we were at EOB, or a
 non-token or BALANCED is non-nil and we can't move).  If we
 are at syntactic whitespace, move over this in place of a token.
@@ -5384,8 +5388,8 @@ comment at the start of cc-engine.el for more info."
 (defvar safe-pos-list)		  ; bound in c-syntactic-skip-backward
 
 (defun c-syntactic-skip-backward (skip-chars &optional limit paren-level)
-  "Like `skip-chars-backward' but only look at syntactically relevant chars,
-i.e. don't stop at positions inside syntactic whitespace or string
+  "Like `skip-chars-backward' but only look at syntactically relevant chars.
+This means don't stop at positions inside syntactic whitespace or string
 literals.  Preprocessor directives are also ignored, with the exception
 of the one that the point starts within, if any.  If LIMIT is given,
 it's assumed to be at a syntactically relevant position.
@@ -6808,26 +6812,47 @@ comment at the start of cc-engine.el for more info."
 (defvar c-found-types nil)
 (make-variable-buffer-local 'c-found-types)
 
+;; Dynamically bound variable that instructs `c-forward-type' to
+;; record the ranges of types that only are found.  Behaves otherwise
+;; like `c-record-type-identifiers'.  Also when this variable is non-nil,
+;; `c-fontify-new-found-type' doesn't get called (yet) for the purported
+;; type.
+(defvar c-record-found-types nil)
+
 (defsubst c-clear-found-types ()
   ;; Clears `c-found-types'.
   (setq c-found-types
 	(make-hash-table :test #'equal :weakness nil)))
 
-(defun c-add-type (from to)
-  ;; Add the given region as a type in `c-found-types'.  If the region
-  ;; doesn't match an existing type but there is a type which is equal
-  ;; to the given one except that the last character is missing, then
-  ;; the shorter type is removed.  That's done to avoid adding all
-  ;; prefixes of a type as it's being entered and font locked.  This
-  ;; doesn't cover cases like when characters are removed from a type
-  ;; or added in the middle.  We'd need the position of point when the
-  ;; font locking is invoked to solve this well.
+(defun c-add-type-1 (from to)
+  ;; Add the given region as a type in `c-found-types'.  Prepare occurrences
+  ;; of this new type for fontification throughout the buffer.
   ;;
   ;; This function might do hidden buffer changes.
   (let ((type (c-syntactic-content from to c-recognize-<>-arglists)))
     (unless (gethash type c-found-types)
-      (remhash (substring type 0 -1) c-found-types)
-      (puthash type t c-found-types))))
+      (puthash type t c-found-types)
+      (when (and (not c-record-found-types) ; Only call `c-fontify-new-fount-type'
+					; when we haven't "bound" c-found-types
+					; to itself in c-forward-<>-arglist.
+		 (eq (string-match c-symbol-key type) 0)
+		 (eq (match-end 0) (length type)))
+	(c-fontify-new-found-type type)))))
+
+(defun c-add-type (from to)
+  ;; Add the given region as a type in `c-found-types'.  Also perform the
+  ;; actions of `c-add-type-1'.  If the region is or overlaps an identifier
+  ;; which might be being typed in, don't record it.  This is tested by
+  ;; checking `c-new-id-start' and `c-new-id-end'.  That's done to avoid
+  ;; adding all prefixes of a type as it's being entered and font locked.
+  ;; This is a bit rough and ready, but now covers adding characters into the
+  ;; middle of an identifer.
+  ;;
+  ;; This function might do hidden buffer changes.
+  (if (and c-new-id-start c-new-id-end
+	   (<= from c-new-id-end) (>= to c-new-id-start))
+      (setq c-new-id-is-type t)
+    (c-add-type-1 from to)))
 
 (defun c-unfind-type (name)
   ;; Remove the "NAME" from c-found-types, if present.
@@ -7223,7 +7248,7 @@ comment at the start of cc-engine.el for more info."
 ;;   the rest of the file is fontified normally.
 
 (defun c-ml-string-make-closer-re (_opener)
-  "Return c-ml-string-any-closer-re.
+  "Return `c-ml-string-any-closer-re'.
 
 This is a suitable language specific value of
 `c-make-ml-string-closer-re-function' for most languages with
@@ -7231,7 +7256,7 @@ multi-line strings (but not C++, for example)."
   c-ml-string-any-closer-re)
 
 (defun c-ml-string-make-opener-re (_closer)
-  "Return c-ml-string-opener-re.
+  "Return `c-ml-string-opener-re'.
 
 This is a suitable language specific value of
 `c-make-ml-string-opener-re-function' for most languages with
@@ -7422,7 +7447,7 @@ multi-line strings (but not C++, for example)."
 		     t)
 		    (save-excursion
 		      (goto-char (match-end 1))
-		      (if (c-in-literal) ; a psuedo closer.
+		      (if (c-in-literal) ; a pseudo closer.
 			  t
 			(setq saved-match-data (match-data))
 			(setq found t)
@@ -8210,11 +8235,6 @@ multi-line strings (but not C++, for example)."
 	   (setq c-record-ref-identifiers
 		 (cons range c-record-ref-identifiers))))))
 
-;; Dynamically bound variable that instructs `c-forward-type' to
-;; record the ranges of types that only are found.  Behaves otherwise
-;; like `c-record-type-identifiers'.
-(defvar c-record-found-types nil)
-
 (defmacro c-forward-keyword-prefixed-id (type)
   ;; Used internally in `c-forward-keyword-clause' to move forward
   ;; over a type (if TYPE is 'type) or a name (otherwise) which
@@ -8444,6 +8464,11 @@ multi-line strings (but not C++, for example)."
 		(c-forward-<>-arglist-recur all-types)))
 	(progn
 	  (when (consp c-record-found-types)
+	    (let ((cur c-record-found-types))
+	      (while (consp (car-safe cur))
+		(c-fontify-new-found-type
+		 (buffer-substring-no-properties (caar cur) (cdar cur)))
+		(setq cur (cdr cur))))
 	    (setq c-record-type-identifiers
 		  ;; `nconc' doesn't mind that the tail of
 		  ;; `c-record-found-types' is t.
@@ -9169,6 +9194,12 @@ multi-line strings (but not C++, for example)."
 
 		(when (and (eq res t)
 			   (consp c-record-found-types))
+		  ;; Cause the confirmed types to get fontified.
+		  (let ((cur c-record-found-types))
+		    (while (consp (car-safe cur))
+		      (c-fontify-new-found-type
+		       (buffer-substring-no-properties (caar cur) (cdar cur)))
+		      (setq cur (cdr cur))))
 		  ;; Merge in the ranges of any types found by the second
 		  ;; `c-forward-type'.
 		  (setq c-record-type-identifiers
@@ -10409,6 +10440,7 @@ This function might do hidden buffer changes."
 			      ;; are directly inside a class (etc.) called "bar".
 			      (save-excursion
 				(and
+				 type-start
 				 (progn
 				   (goto-char name-start)
 				   (not (memq (c-forward-type) '(nil maybe))))
@@ -12086,7 +12118,10 @@ comment at the start of cc-engine.el for more info."
 	   (and (c-major-mode-is 'pike-mode)
 		c-decl-block-key)))
     (while (eq braceassignp 'dontknow)
-      (cond ((eq (char-after) ?\;)
+      (cond ((or (eq (char-after) ?\;)
+		 (save-excursion
+		   (progn (c-backward-syntactic-ws)
+			  (c-at-vsemi-p))))
 	     (setq braceassignp nil))
 	    ((and class-key
 		  (looking-at class-key))
@@ -12288,12 +12323,15 @@ comment at the start of cc-engine.el for more info."
 	  pos2 in-paren parens-before-brace
 	  paren-state paren-pos)
 
-      (setq res (c-backward-token-2 1 t lim))
+      (setq res
+	    (or (progn (c-backward-syntactic-ws)
+		       (c-back-over-compound-identifier))
+		(c-backward-token-2 1 t lim)))
       ;; Checks to do only on the first sexp before the brace.
       ;; Have we a C++ initialization, without an "="?
       (if (and (c-major-mode-is 'c++-mode)
 	       (cond
-		((and (or (not (eq res 0))
+		((and (or (not (memq res '(t 0)))
 			  (eq (char-after) ?,))
 		      (setq paren-state (c-parse-state))
 		      (setq paren-pos (c-pull-open-brace paren-state))
@@ -12317,7 +12355,7 @@ comment at the start of cc-engine.el for more info."
 		(t nil))
 	       (save-excursion
 		 (cond
-		  ((or (not (eq res 0))
+		  ((or (not (memq res '(t 0)))
 		       (eq (char-after) ?,))
 		   (and (setq paren-state (c-parse-state))
 			(setq paren-pos (c-pull-open-brace paren-state))
@@ -14007,7 +14045,8 @@ comment at the start of cc-engine.el for more info."
 	      ;; clause - we assume only C++ needs it.
 	      (c-syntactic-skip-backward "^;,=" lim t))
 	    (setq placeholder (point))
-	    (memq (char-before) '(?, ?= ?<)))
+	    (and (memq (char-before) '(?, ?= ?<))
+		 (not (c-crosses-statement-barrier-p (point) indent-point))))
 	  (cond
 
 	   ;; CASE 5D.6: Something like C++11's "using foo = <type-exp>"

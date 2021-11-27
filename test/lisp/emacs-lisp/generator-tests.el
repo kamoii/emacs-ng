@@ -219,7 +219,7 @@ identical output."
     (should (eql (iter-next it -1) 42))
     (should (eql (iter-next it -1) -1))))
 
-(ert-deftest cps-loop ()
+(ert-deftest cps-loop-2 ()
   (should
    (equal (cl-loop for x iter-by (mygenerator 42)
              collect x)
@@ -271,7 +271,7 @@ identical output."
                      (unwind-protect
                           (progn
                             (iter-yield 1)
-                            (error "test")
+                            (error "Test")
                             (iter-yield 2))
                        (cl-incf nr-unwound))))))
     (should (equal (iter-next iter) 1))

@@ -1455,6 +1455,7 @@ is non-nil)."
 (defvar Info-streamline-headings
   '(("Emacs" . "Emacs")
     ("Software development\\|Programming" . "Software development")
+    ("Compression\\|Data Compression" . "Compression")
     ("Libraries" . "Libraries")
     ("Network applications\\|World Wide Web\\|Net Utilities"
      . "Network applications"))
@@ -1731,22 +1732,26 @@ escaped (\\\",\\\\)."
 	       (list
 		(concat
 		 " ("
-		 (if (stringp Info-current-file)
-		     (string-replace
-		      "%" "%%"
-		      (file-name-sans-extension
-		       (file-name-nondirectory Info-current-file)))
-		   (format "*%S*" Info-current-file))
-		 ") "
-		 (if Info-current-node
-		     (propertize (string-replace
-				  "%" "%%" Info-current-node)
-				 'face 'mode-line-buffer-id
-				 'help-echo
-				 "mouse-1: scroll forward, mouse-3: scroll back"
-				 'mouse-face 'mode-line-highlight
-				 'local-map Info-mode-line-node-keymap)
-		   ""))))))
+                 (propertize
+		  (if (stringp Info-current-file)
+                      (string-replace
+		       "%" "%%"
+                       ;; Remove trailing ".info" and ".info.gz", etc.
+		       (replace-regexp-in-string
+                        "\\..*\\'" ""
+                        (file-name-nondirectory Info-current-file)))
+		    (format "*%S*" Info-current-file))
+                  'help-echo "Manual name")
+		 ") ")
+		(if Info-current-node
+		    (propertize (string-replace
+				 "%" "%%" Info-current-node)
+				'face 'mode-line-buffer-id
+				'help-echo
+				"mouse-1: scroll forward, mouse-3: scroll back"
+				'mouse-face 'mode-line-highlight
+				'local-map Info-mode-line-node-keymap)
+		  "")))))
 
 ;; Go to an Info node specified with a filename-and-nodename string
 ;; of the sort that is found in pointers in nodes.
@@ -1787,7 +1792,46 @@ of NODENAME; if none is found it then tries a case-insensitive match
       (if trim (setq nodename (substring nodename 0 trim))))
     (if transient-mark-mode (deactivate-mark))
     (Info-find-node (if (equal filename "") nil filename)
-		    (if (equal nodename "") "Top" nodename) nil strict-case)))
+                    (if (equal nodename "") "Top" nodename) nil strict-case)))
+
+(defun Info-goto-node-web (node)
+  "Use `browse-url' to go to the gnu.org web server's version of NODE.
+By default, go to the current Info node."
+  (interactive (list (Info-read-node-name
+                      "Go to node (default current page): " Info-current-node))
+               Info-mode)
+  (browse-url-button-open-url
+   (Info-url-for-node (format "(%s)%s" (file-name-sans-extension
+                                        (file-name-nondirectory
+                                         Info-current-file))
+                              node))))
+
+(defun Info-url-for-node (node)
+  "Return a URL for NODE, a node in the GNU Emacs or Elisp manual.
+NODE should be a string on the form \"(manual)Node\".  Only emacs
+and elisp manuals are supported."
+  (unless (string-match "\\`(\\(.+\\))\\(.+\\)\\'" node)
+    (error "Invalid node name %s" node))
+  (let ((manual (match-string 1 node))
+        (node (match-string 2 node)))
+    (unless (member manual '("emacs" "elisp"))
+      (error "Only emacs/elisp manuals are supported"))
+    ;; Encode a bunch of characters the way that makeinfo does.
+    (setq node
+          (mapconcat (lambda (ch)
+                       (if (or (< ch 32)        ; ^@^A-^Z^[^\^]^^^-
+                               (<= 33 ch 47)    ; !"#$%&'()*+,-./
+                               (<= 58 ch 64)    ; :;<=>?@
+                               (<= 91 ch 96)    ; [\]_`
+                               (<= 123 ch 127)) ; {|}~ DEL
+                           (format "_00%x" ch)
+                         (char-to-string ch)))
+                     node
+                     ""))
+    (concat "https://www.gnu.org/software/emacs/manual/html_node/"
+            manual "/"
+            (url-hexify-string (string-replace " " "-" node))
+            ".html")))
 
 (defvar Info-read-node-completion-table)
 
@@ -1872,7 +1916,7 @@ See `completing-read' for a description of arguments and usage."
        code Info-read-node-completion-table string predicate))))
 
 ;; Arrange to highlight the proper letters in the completion list buffer.
-(defun Info-read-node-name (prompt)
+(defun Info-read-node-name (prompt &optional default)
   "Read an Info node name with completion, prompting with PROMPT.
 A node name can have the form \"NODENAME\", referring to a node
 in the current Info file, or \"(FILENAME)NODENAME\", referring to
@@ -1880,7 +1924,8 @@ a node in FILENAME.  \"(FILENAME)\" is a short format to go to
 the Top node in FILENAME."
   (let* ((completion-ignore-case t)
 	 (Info-read-node-completion-table (Info-build-node-completions))
-	 (nodename (completing-read prompt #'Info-read-node-name-1 nil t)))
+         (nodename (completing-read prompt #'Info-read-node-name-1 nil t nil
+                                    'Info-minibuf-history default)))
     (if (equal nodename "")
 	(Info-read-node-name prompt)
       nodename)))
@@ -2599,12 +2644,9 @@ new buffer."
      (if (eq (length completions) 1)
          (setq default (car completions)))
      (if completions
-	 (let ((input (completing-read (if default
-					   (concat
-					    "Follow reference named (default "
-					    default "): ")
-					 "Follow reference named: ")
-				       completions nil t)))
+         (let ((input (completing-read (format-prompt "Follow reference named"
+                                                      default)
+                                       completions nil t)))
 	   (list (if (equal input "")
 		     default input)
                  current-prefix-arg))
@@ -4044,6 +4086,7 @@ If FORK is non-nil, it is passed to `Info-goto-node'."
     (define-key map "e" 'end-of-buffer)
     (define-key map "f" 'Info-follow-reference)
     (define-key map "g" 'Info-goto-node)
+    (define-key map "G" 'Info-goto-node-web)
     (define-key map "h" 'Info-help)
     ;; This is for compatibility with standalone info (>~ version 5.2).
     ;; Though for some time, standalone info had H and h reversed.
@@ -4146,7 +4189,8 @@ If FORK is non-nil, it is passed to `Info-goto-node'."
    "---"
    ["Exit" quit-window :help "Stop reading Info"]))
 
-(defun Info-context-menu (menu)
+(defun Info-context-menu (menu click)
+  "Populate MENU with Info commands at CLICK."
   (define-key menu [Info-separator] menu-bar-separator)
   (let ((easy-menu (make-sparse-keymap "Info")))
     (easy-menu-define nil easy-menu nil
@@ -4159,7 +4203,7 @@ If FORK is non-nil, it is passed to `Info-goto-node'."
       (when (consp item)
         (define-key menu (vector (car item)) (cdr item)))))
 
-  (when (mouse-posn-property (event-start last-input-event) 'mouse-face)
+  (when (mouse-posn-property (event-start click) 'mouse-face)
     (define-key menu [Info-mouse-follow-nearest-node]
       '(menu-item "Follow Link" Info-mouse-follow-nearest-node
                   :help "Follow a link where you click")))
@@ -4852,9 +4896,16 @@ first line or header line, and for breadcrumb links.")
 		    ;; an end of sentence
 		    (skip-syntax-backward " ("))
                   (setq other-tag
-			(cond ((save-match-data (looking-back "\\(^\\| \\)see"
+                        (cond ((save-match-data (looking-back "\\(^\\|[ (]\\)see"
                                                               (- (point) 4)))
 			       "")
+                              ;; We want "Also *note" to produce
+                              ;; "Also see", but "See also *note" to produce
+                              ;; "See also", so match case-sensitively.
+                              ((save-match-data (let ((case-fold-search nil))
+                                                  (looking-back "\\(^\\| \\)also"
+                                                              (- (point) 5))))
+                               "")
 			      ((save-match-data (looking-back "\\(^\\| \\)in"
                                                               (- (point) 3)))
 			       "")
